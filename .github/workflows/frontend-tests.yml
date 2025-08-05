@@ -9,11 +9,40 @@ on:
     branches: [ main ]
     paths:
       - 'MyProject.Client/**'
+  workflow_dispatch:
+    inputs:
+      use_self_hosted:
+        description: 'Use self-hosted runners'
+        type: boolean
+        default: true
+
+env:
+  USE_SELF_HOSTED: ${{ inputs.use_self_hosted != false }}
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+  pull-requests: read
 
 jobs:
+  start-runner:
+    if: ${{ inputs.use_self_hosted != false }}
+    uses: ./.github/workflows/manage-runner.yml
+    with:
+      action: start
+      config: frontend
+      labels: nodejs,frontend
+    secrets:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ${{ (inputs.use_self_hosted != false && needs.start-runner.outputs.runner_label) || 'ubuntu-latest' }}
+    needs: [start-runner]
+    if: ${{ always() && (needs.start-runner.result == 'success' || needs.start-runner.result == 'skipped') }}
     
     defaults:
       run:
@@ -26,7 +55,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'npm'
           cache-dependency-path: './MyProject.Client/package-lock.json'
       
@@ -38,8 +67,9 @@ jobs:
 
   test:
     name: Test
-    needs: lint
-    runs-on: ubuntu-latest
+    needs: [start-runner, lint]
+    runs-on: ${{ (inputs.use_self_hosted != false && needs.start-runner.outputs.runner_label) || 'ubuntu-latest' }}
+    if: ${{ always() && (needs.start-runner.result == 'success' || needs.start-runner.result == 'skipped') && (needs.lint.result == 'success') }}
     
     defaults:
       run:
@@ -52,7 +82,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'npm'
           cache-dependency-path: './MyProject.Client/package-lock.json'
       
@@ -70,8 +100,9 @@ jobs:
 
   build:
     name: Build
-    needs: test
-    runs-on: ubuntu-latest
+    needs: [start-runner, test]
+    runs-on: ${{ (inputs.use_self_hosted != false && needs.start-runner.outputs.runner_label) || 'ubuntu-latest' }}
+    if: ${{ always() && (needs.start-runner.result == 'success' || needs.start-runner.result == 'skipped') && (needs.test.result == 'success') }}
     
     defaults:
       run:
@@ -84,7 +115,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: 'npm'
           cache-dependency-path: './MyProject.Client/package-lock.json'
       
@@ -98,4 +129,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
-          path: ./MyProject.Client/dist/ 
+          path: ./MyProject.Client/dist/
+
+  stop-runner:
+    if: ${{ always() && inputs.use_self_hosted != false && needs.start-runner.outputs.task_arn }}
+    needs: [start-runner, lint, test, build]
+    uses: ./.github/workflows/manage-runner.yml
+    with:
+      action: stop
+      config: frontend
+      task_arn: ${{ needs.start-runner.outputs.task_arn }}
+    secrets:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PAT_TOKEN: ${{ secrets.PAT_TOKEN }} 

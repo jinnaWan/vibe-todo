@@ -1,0 +1,45 @@
+# Git files
+.git
+.gitignore
+
+# CI/CD files
+.github
+!.github/docker/start.sh
+
+# IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+bin/
+obj/
+dist/
+build/
+coverage/
+node_modules/
+*.log
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+**/TestResults/
+**/.nyc_output
+**/coverage
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Cache files
+.npm
+.yarn/cache
+.nuget/packages 

@@ -1,0 +1,230 @@
+name: Manage Self-Hosted Runner
+
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: 'Action to perform: start or stop'
+        required: true
+        type: string
+      runner_type:
+        description: 'Type of runner to use'
+        required: false
+        type: string
+        default: 'aws-ecs'
+      config:
+        description: 'Configuration profile to use'
+        required: false
+        type: string
+        default: 'default'
+      labels:
+        description: 'Additional labels for the runner'
+        required: false
+        type: string
+        default: ''
+      task_arn:
+        description: 'ECS Task ARN (for stop action)'
+        required: false
+        type: string
+    outputs:
+      runner_label:
+        description: 'The unique label for the started runner'
+        value: ${{ jobs.start-runner.outputs.runner_label }}
+      task_arn:
+        description: 'The ECS Task ARN'
+        value: ${{ jobs.start-runner.outputs.task_arn }}
+    secrets:
+      AWS_ACCOUNT_ID:
+        required: true
+      GITHUB_TOKEN:
+        required: true
+      PAT_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+jobs:
+  start-runner:
+    if: ${{ inputs.action == 'start' }}
+    runs-on: ubuntu-latest
+    outputs:
+      runner_label: ${{ steps.generate_label.outputs.runner_label }}
+      task_arn: ${{ steps.ecs_task_run.outputs.task_arn }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GithubActionAssumeRole
+          aws-region: ap-southeast-1
+
+      - name: Load Configuration
+        id: load_config
+        run: |
+          CONFIG_FILE=".github/configs/${{ inputs.config }}.env"
+          echo "Loading configuration from $CONFIG_FILE"
+          
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "::error::Configuration file $CONFIG_FILE not found"
+            exit 1
+          fi
+          
+          # Remove Windows line endings and BOM
+          sed -i 's/\r$//' "$CONFIG_FILE"
+          if [ "$(head -c 3 "$CONFIG_FILE" | wc -c)" -eq 3 ]; then
+            sed -i '1s/^\xEF\xBB\xBF//' "$CONFIG_FILE" || true
+          fi
+          
+          # Load environment variables
+          set -a
+          source "$CONFIG_FILE"
+          set +a
+          
+          # Export to GitHub environment
+          echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
+          echo "TASK_DEFINITION=$TASK_DEFINITION" >> $GITHUB_ENV
+          echo "CAPACITY_PROVIDER=$CAPACITY_PROVIDER" >> $GITHUB_ENV
+          echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
+          echo "CONTAINER_MEMORY=$CONTAINER_MEMORY" >> $GITHUB_ENV
+          echo "CONTAINER_CPU=$CONTAINER_CPU" >> $GITHUB_ENV
+          echo "SECURITY_GROUPS=$SECURITY_GROUPS" >> $GITHUB_ENV
+          echo "SUBNETS=$SUBNETS" >> $GITHUB_ENV
+          
+          # Validate required variables
+          if [ -z "$ECS_CLUSTER" ] || [ -z "$TASK_DEFINITION" ] || [ -z "$CONTAINER_NAME" ]; then
+            echo "::error::Required configuration variables are missing"
+            exit 1
+          fi
+
+      - name: Generate Unique Runner Label
+        id: generate_label
+        run: |
+          TIMESTAMP=$(date +%s)
+          RANDOM_ID=$(echo -n "${TIMESTAMP}-${{ github.run_id }}" | sha256sum | cut -c1-8)
+          UNIQUE_LABEL="runner-${RANDOM_ID}"
+          echo "runner_label=$UNIQUE_LABEL" >> $GITHUB_ENV
+          echo "runner_label=$UNIQUE_LABEL" >> $GITHUB_OUTPUT
+          echo "Generated runner label: $UNIQUE_LABEL"
+
+      - name: Start ECS Task
+        id: ecs_task_run
+        run: |
+          UNIQUE_LABEL="${{ env.runner_label }}"
+          RUNNER_NAME="runner-${{ github.run_id }}-${{ github.run_attempt }}-$(date +%s)"
+          
+          # Combine default labels with additional labels
+          ALL_LABELS="self-hosted,aws-ecs,$UNIQUE_LABEL"
+          if [ -n "${{ inputs.labels }}" ]; then
+            ALL_LABELS="$ALL_LABELS,${{ inputs.labels }}"
+          fi
+          
+          # Prepare container overrides
+          OVERRIDES='{
+            "containerOverrides": [
+              {
+                "name": "'"$CONTAINER_NAME"'",
+                "environment": [
+                  { "name": "LABELS", "value": "'"$ALL_LABELS"'" },
+                  { "name": "RUNNER_NAME", "value": "'"$RUNNER_NAME"'" },
+                  { "name": "REPO_URL", "value": "${{ github.server_url }}/${{ github.repository }}" }
+                ]'
+          
+          # Add memory and CPU if specified
+          if [ -n "$CONTAINER_MEMORY" ]; then
+            OVERRIDES="$OVERRIDES"', "memory": '"$CONTAINER_MEMORY"
+          fi
+          
+          if [ -n "$CONTAINER_CPU" ]; then
+            OVERRIDES="$OVERRIDES"', "cpu": '"$CONTAINER_CPU"
+          fi
+          
+          OVERRIDES="$OVERRIDES"'
+              }
+            ]
+          }'
+          
+          echo "Starting ECS task with overrides: $OVERRIDES"
+          
+          # Run the ECS task
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TASK_DEFINITION" \
+            --capacity-provider-strategy capacityProvider=$CAPACITY_PROVIDER,weight=1 \
+            --count 1 \
+            --overrides "$OVERRIDES" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+          
+          if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" = "None" ]; then
+            echo "::error::Failed to start ECS task"
+            exit 1
+          fi
+          
+          echo "task_arn=$TASK_ARN" >> $GITHUB_OUTPUT
+          echo "Started ECS task: $TASK_ARN"
+          
+          # Wait for the runner to be ready
+          echo "Waiting for runner to be available..."
+          max_attempts=30
+          attempt=0
+          
+          while [ $attempt -lt $max_attempts ]; do
+            if gh api repos/${{ github.repository }}/actions/runners --paginate | jq -e ".[] | select(.labels[].name == \"$UNIQUE_LABEL\" and .status == \"online\")" > /dev/null; then
+              echo "Runner is online and ready!"
+              break
+            fi
+            
+            attempt=$((attempt + 1))
+            echo "Attempt $attempt/$max_attempts: Waiting for runner..."
+            sleep 10
+          done
+          
+          if [ $attempt -eq $max_attempts ]; then
+            echo "::warning::Runner did not come online within expected time, but continuing..."
+          fi
+
+  stop-runner:
+    if: ${{ inputs.action == 'stop' }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GithubActionAssumeRole
+          aws-region: ap-southeast-1
+
+      - name: Load Configuration
+        run: |
+          CONFIG_FILE=".github/configs/${{ inputs.config }}.env"
+          echo "Loading configuration from $CONFIG_FILE"
+          
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "::error::Configuration file $CONFIG_FILE not found"
+            exit 1
+          fi
+          
+          # Load environment variables
+          set -a
+          source "$CONFIG_FILE"
+          set +a
+          
+          echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
+
+      - name: Stop ECS Task
+        if: ${{ inputs.task_arn }}
+        run: |
+          echo "Stopping ECS task: ${{ inputs.task_arn }}"
+          aws ecs stop-task \
+            --cluster "$ECS_CLUSTER" \
+            --task "${{ inputs.task_arn }}" \
+            --reason "GitHub Actions workflow completed" || echo "Task may have already stopped" 
