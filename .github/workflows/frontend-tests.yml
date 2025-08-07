@@ -13,7 +13,7 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     
     defaults:
       run:
@@ -39,7 +39,7 @@ jobs:
   test:
     name: Test
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     
     defaults:
       run:
@@ -71,7 +71,7 @@ jobs:
   build:
     name: Build
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     
     defaults:
       run:
