@@ -6,7 +6,7 @@ using MyProject.Api.Services;
 using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
-
+// Random Comment
 // Add services to the container.
 builder.Services.AddControllers();
 
