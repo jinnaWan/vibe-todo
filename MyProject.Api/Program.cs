@@ -95,7 +95,7 @@ app.Run();
 /// <summary>
 /// Executes all stored procedure SQL scripts
 /// </summary>
-void ExecuteStoredProcedureScripts(ApplicationDbContext dbContext, ILogger logger)
+static void ExecuteStoredProcedureScripts(ApplicationDbContext dbContext, ILogger logger)
 {
     try
     {
