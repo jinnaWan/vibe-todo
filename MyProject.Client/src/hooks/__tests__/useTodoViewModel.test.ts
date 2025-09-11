@@ -3,7 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useTodoViewModel } from '../useTodoViewModel';
 import { TodoApiService } from '../../services/apiService';
 import { Todo } from '../../generated';
-import { AxiosResponse } from 'axios';
+import { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 // Mock the TodoApiService
 vi.mock('../../services/apiClient', async () => {
@@ -31,7 +31,7 @@ describe('useTodoViewModel', () => {
     status: 200,
     statusText: 'OK',
     headers: {},
-    config: {} as any
+    config: {} as InternalAxiosRequestConfig
   });
   
   beforeEach(() => {
