@@ -28,7 +28,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       
-      # Option 1: Apply format fixes automatically
       - name: Install dotnet-format
         run: dotnet tool install -g dotnet-format
       
@@ -46,8 +45,8 @@ jobs:
           fi
         continue-on-error: true
 
-  test:
-    name: Test
+  build:
+    name: Build
     needs: lint
     runs-on: ubuntu-latest
     
@@ -62,6 +61,29 @@ jobs:
       
       - name: Install dependencies
         run: dotnet restore
+      
+      - name: Build
+        run: dotnet build MyProject.sln --configuration Release --no-restore
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '8.0.x'
+      
+      - name: Install dependencies
+        run: dotnet restore
+      
+      - name: Build (for tests)
+        run: dotnet build MyProject.sln --configuration Release --no-restore
       
       - name: Run tests with coverage
         run: dotnet test MyProject.sln --configuration Release --no-restore --collect:"XPlat Code Coverage"
@@ -90,8 +112,8 @@ jobs:
           path: coverage-report
           retention-days: 7
 
-  build:
-    name: Build
+  publish:
+    name: Publish
     needs: test
     runs-on: ubuntu-latest
     
@@ -107,9 +129,6 @@ jobs:
       - name: Install dependencies
         run: dotnet restore
       
-      - name: Build
-        run: dotnet build MyProject.sln --configuration Release --no-restore
-      
       - name: Publish
         run: dotnet publish MyProject.Api/MyProject.Api.csproj --configuration Release --no-restore --output ./publish
       
@@ -118,4 +137,4 @@ jobs:
         with:
           name: api-build
           path: ./publish
-          retention-days: 7 
+          retention-days: 7
