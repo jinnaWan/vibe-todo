@@ -53,35 +53,37 @@ export function TodoList() {
           {todos.length === 0 ? (
             <li className="empty-list">No todos yet. Add one above!</li>
           ) : (
-            todos.map((todo) => (
-              <li 
-                key={todo.id} 
-                className={todo.isCompleted ? 'completed' : ''}
-              >
-                <div 
-                  className="todo-title"
-                  onClick={() => toggleTodoCompletion(todo.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      toggleTodoCompletion(todo.id);
-                    }
-                  }}
-                  role="checkbox"
-                  aria-checked={todo.isCompleted}
-                  tabIndex={0}
+            todos
+              .filter(todo => todo.id !== undefined)
+              .map((todo) => (
+                <li 
+                  key={todo.id} 
+                  className={todo.isCompleted ? 'completed' : ''}
                 >
-                  {todo.title}
-                </div>
-                <button 
-                  className="delete-btn" 
-                  onClick={() => deleteTodo(todo.id)}
-                  aria-label={`Delete todo: ${todo.title}`}
-                >
-                  Delete
-                </button>
-              </li>
-            ))
+                  <div 
+                    className="todo-title"
+                    onClick={() => toggleTodoCompletion(todo.id!)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleTodoCompletion(todo.id!);
+                      }
+                    }}
+                    role="checkbox"
+                    aria-checked={todo.isCompleted}
+                    tabIndex={0}
+                  >
+                    {todo.title}
+                  </div>
+                  <button 
+                    className="delete-btn" 
+                    onClick={() => deleteTodo(todo.id!)}
+                    aria-label={`Delete todo: ${todo.title}`}
+                  >
+                    Delete
+                  </button>
+                </li>
+              ))
           )}
         </ul>
       )}
