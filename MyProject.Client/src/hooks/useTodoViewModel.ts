@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Todo } from '../models/Todo';
-import { TodoService } from '../services/apiService';
+import { TodoApiService } from '../services/apiService';
+import { Todo } from '../generated';
 
 /**
  * View model hook for managing Todo items
@@ -18,8 +18,8 @@ export function useTodoViewModel() {
     try {
       setLoading(true);
       setError(null);
-      const data = await TodoService.getAllTodos();
-      setTodos(data);
+      const res = await TodoApiService.getAllTodos();
+      setTodos(res.data);
     } catch (err) {
       setError('Failed to fetch todos. Make sure the API is running.');
       console.error('Error in fetchTodos:', err);
@@ -36,12 +36,12 @@ export function useTodoViewModel() {
 
     try {
       setError(null);
-      const newTodo = await TodoService.createTodo({
+      const res = await TodoApiService.createTodo({
         title: newTodoTitle,
         isCompleted: false
       });
-      
-      setTodos(prevTodos => [...prevTodos, newTodo]);
+
+      setTodos(prevTodos => [...prevTodos, res.data]);
       setNewTodoTitle('');
     } catch (err) {
       setError('Failed to add todo');
@@ -65,7 +65,7 @@ export function useTodoViewModel() {
         isCompleted: !todoToUpdate.isCompleted 
       };
       
-      await TodoService.updateTodo(updatedTodo);
+      await TodoApiService.updateTodo(id, updatedTodo);
       
       setTodos(prevTodos => 
         prevTodos.map(todo => 
@@ -85,7 +85,7 @@ export function useTodoViewModel() {
   const deleteTodo = useCallback(async (id: number) => {
     try {
       setError(null);
-      await TodoService.deleteTodo(id);
+      await TodoApiService.deleteTodo(id);
       setTodos(prevTodos => prevTodos.filter(todo => todo.id !== id));
     } catch (err) {
       setError(`Failed to delete todo #${id}`);

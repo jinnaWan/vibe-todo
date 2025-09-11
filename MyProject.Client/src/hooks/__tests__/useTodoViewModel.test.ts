@@ -1,35 +1,58 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useTodoViewModel } from '../useTodoViewModel';
-import { TodoService } from '../../services/apiService';
-import { Todo } from '../../models/Todo';
+import { TodoApiService } from '../../services/apiService';
+import { Todo } from '../../generated';
+import { AxiosResponse } from 'axios';
 
-// Mock the TodoService
-vi.mock('../../services/apiService', () => ({
-  TodoService: {
-    getAllTodos: vi.fn(),
-    getTodoById: vi.fn(),
-    createTodo: vi.fn(),
-    updateTodo: vi.fn(),
-    deleteTodo: vi.fn()
-  }
-}));
+// Mock the TodoApiService
+vi.mock('../../services/apiClient', async () => {
+  const actual = await vi.importActual('../../services/apiClient');
+  return {
+    ...actual,
+    TodoApiService: {
+      getAllTodos: vi.fn(),
+      getTodoById: vi.fn(),
+      createTodo: vi.fn(),
+      updateTodo: vi.fn(),
+      deleteTodo: vi.fn()
+    }
+  };
+});
 
 describe('useTodoViewModel', () => {
-  const mockTodos = [
+  const mockTodos: Todo[] = [
     { id: 1, title: 'Test Todo 1', isCompleted: false },
     { id: 2, title: 'Test Todo 2', isCompleted: true }
   ];
+
+  const createMockAxiosResponse = <T>(data: T): AxiosResponse<T> => ({
+    data,
+    status: 200,
+    statusText: 'OK',
+    headers: {},
+    config: {} as any
+  });
   
   beforeEach(() => {
     vi.clearAllMocks();
     
-    // Default mock implementations
-    (TodoService.getAllTodos as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockTodos);
-    (TodoService.createTodo as unknown as ReturnType<typeof vi.fn>).mockImplementation((todo: Omit<Todo, 'id'>) => 
-      Promise.resolve({ id: 3, ...todo }));
-    (TodoService.updateTodo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-    (TodoService.deleteTodo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    // Default mock implementations - note they return AxiosResponse objects
+    (TodoApiService.getAllTodos as ReturnType<typeof vi.fn>).mockResolvedValue(
+      createMockAxiosResponse(mockTodos)
+    );
+    
+    (TodoApiService.createTodo as ReturnType<typeof vi.fn>).mockImplementation(
+      (todo: Todo) => Promise.resolve(createMockAxiosResponse({ id: 3, ...todo }))
+    );
+    
+    (TodoApiService.updateTodo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      createMockAxiosResponse(undefined)
+    );
+    
+    (TodoApiService.deleteTodo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      createMockAxiosResponse(undefined)
+    );
   });
   
   it('should fetch todos on initialization', async () => {
@@ -43,13 +66,13 @@ describe('useTodoViewModel', () => {
       expect(result.current.loading).toBe(false);
     });
     
-    expect(TodoService.getAllTodos).toHaveBeenCalledTimes(1);
+    expect(TodoApiService.getAllTodos).toHaveBeenCalledTimes(1);
     expect(result.current.todos).toEqual(mockTodos);
     expect(result.current.error).toBeNull();
   });
   
   it('should handle fetch todos error', async () => {
-    (TodoService.getAllTodos as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API error'));
+    (TodoApiService.getAllTodos as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('API error'));
     
     const { result } = renderHook(() => useTodoViewModel());
     
@@ -80,7 +103,7 @@ describe('useTodoViewModel', () => {
       await result.current.addTodo();
     });
     
-    expect(TodoService.createTodo).toHaveBeenCalledWith({
+    expect(TodoApiService.createTodo).toHaveBeenCalledWith({
       title: 'New Todo Item',
       isCompleted: false
     });
@@ -100,7 +123,7 @@ describe('useTodoViewModel', () => {
       await result.current.addTodo();
     });
     
-    expect(TodoService.createTodo).not.toHaveBeenCalled();
+    expect(TodoApiService.createTodo).not.toHaveBeenCalled();
   });
   
   it('should toggle todo completion status', async () => {
@@ -115,7 +138,7 @@ describe('useTodoViewModel', () => {
       await result.current.toggleTodoCompletion(1);
     });
     
-    expect(TodoService.updateTodo).toHaveBeenCalledWith({
+    expect(TodoApiService.updateTodo).toHaveBeenCalledWith({
       id: 1,
       title: 'Test Todo 1',
       isCompleted: true
@@ -137,7 +160,7 @@ describe('useTodoViewModel', () => {
       await result.current.deleteTodo(1);
     });
     
-    expect(TodoService.deleteTodo).toHaveBeenCalledWith(1);
+    expect(TodoApiService.deleteTodo).toHaveBeenCalledWith(1);
     
     // The todo should be removed from the state
     expect(result.current.todos.length).toBe(1);
