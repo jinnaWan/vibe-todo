@@ -145,42 +145,70 @@ jobs:
           path: ./publish
           retention-days: 7
     
-  release:
-    name: Test Cross Repository Release
-    needs: publish
-    runs-on: ubuntu-latest
+release:
+  name: Test Cross Repository Release
+  needs: publish
+  runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout ToaaNiung repository
-        uses: actions/checkout@v4
-        with:
-          repository: jinnaWan/ToaaNiung
-          fetch-depth: 0
-          token: ${{ secrets.CROSS_REPO_PAT }}
+  steps:
+    - name: Checkout ToaaNiung repository
+      uses: actions/checkout@v4
+      with:
+        repository: jinnaWan/ToaaNiung
+        fetch-depth: 0
+        token: ${{ secrets.CROSS_REPO_PAT }}
 
-      - name: Create or Update GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: "Test Tag"
-          name: "Release Candidate Test Tag"
-          target_commitish: main
-          draft: false
-          prerelease: true
-          generate_release_notes: true
-          token: ${{ secrets.CROSS_REPO_PAT }}
-          body: |
-            ## 🚀 Release Candidate: RC ToaaNiung
+    - name: Configure Git
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
 
-            **Automatically promoted from nightly E2E test run in flowaccount.workspace**
+    # NEW STEP: Create and push the tag first
+    - name: Create and push tag
+      id: create_tag
+      run: |
+        TAG_NAME="test-tag-v1.0.0"  # Use a valid tag name (no spaces!)
+        
+        # Fetch all tags
+        git fetch --tags
+        
+        # Delete if exists (optional, for testing)
+        if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+          echo "⚠️ Tag $TAG_NAME already exists - deleting and recreating"
+          git tag -d "$TAG_NAME"
+          git push --delete origin "$TAG_NAME" || echo "Tag already deleted from remote"
+        fi
+        
+        # Create and push tag
+        git tag -a "$TAG_NAME" -m "Test release tag for cross-repo release"
+        git push origin "$TAG_NAME"
+        
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "✅ Created and pushed tag: $TAG_NAME"
 
-            ### 📊 Test Results
-            - ✅ All E2E smoke tests passed (flowaccount.workspace)
-            - 🏷️ Nightly Tag: Nightly Tag
-            - 🏷️ RC Tag: Release Candidate
+    # NOW create the release using the tag that exists
+    - name: Create or Update GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.create_tag.outputs.tag_name }}  # Use the tag we just created
+        name: "Release Candidate ${{ steps.create_tag.outputs.tag_name }}"
+        target_commitish: main
+        draft: false
+        prerelease: true
+        generate_release_notes: true
+        token: ${{ secrets.CROSS_REPO_PAT }}
+        body: |
+          ## 🚀 Release Candidate: RC ToaaNiung
 
-            ### 📅 Build Information
-            - **Date**: ${{ github.event.repository.updated_at }}
-            - **Triggered by**: @${{ github.actor }}
-            - **Workflow Run**: [View Details](https://github.com/jinnaWan/vibe-todo/actions/runs/${{ github.run_id }})
+          **Automatically promoted from nightly E2E test run in toaaniung.workspace**
 
-            ---
+          ### 📊 Test Results
+          - ✅ All E2E smoke tests passed (toaaniung.workspace)
+          - 🏷️ Test Tag: ${{ steps.create_tag.outputs.tag_name }}
+
+          ### 📅 Build Information
+          - **Date**: ${{ github.event.repository.updated_at }}
+          - **Triggered by**: @${{ github.actor }}
+          - **Workflow Run**: [View Details](https://github.com/jinnaWan/vibe-todo/actions/runs/${{ github.run_id }})
+
+          ---
