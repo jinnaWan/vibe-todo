@@ -7,7 +7,7 @@ using System.IO;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Add services to the container. UwU
 builder.Services.AddControllers();
 
 // Add DbContext
