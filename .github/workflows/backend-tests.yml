@@ -14,6 +14,12 @@ on:
       - 'MyProject.Api.UnitTests/**'
       - 'MyProject.sln'
 
+permissions:
+  contents: write
+  actions: write
+  id-token: write
+  pull-requests: read
+
 jobs:
   lint:
     name: Lint
@@ -138,3 +144,43 @@ jobs:
           name: api-build
           path: ./publish
           retention-days: 7
+    
+    release:
+      name: Test Cross Repository Release
+      needs: publish
+      runs-on: ubuntu-latest
+
+      steps:
+        - name: Checkout ToaaNiung repository
+          uses: actions/checkout@v4
+          with:
+            repository: jinnaWan/ToaaNiung
+            fetch-depth: 0
+            token: ${{ secrets.CROSS_REPO_PAT }}
+
+        - name: Create or Update GitHub Release
+          uses: softprops/action-gh-release@v2
+          with:
+            tag_name: "Test Tag"
+            name: "Release Candidate Test Tag"
+            target_commitish: main
+            draft: false
+            prerelease: true
+            generate_release_notes: true
+            token: ${{ secrets.CROSS_REPO_PAT }}
+            body: |
+              ## 🚀 Release Candidate: RC ToaaNiung
+
+              **Automatically promoted from nightly E2E test run in flowaccount.workspace**
+
+              ### 📊 Test Results
+              - ✅ All E2E smoke tests passed (flowaccount.workspace)
+              - 🏷️ Nightly Tag: Nightly Tag
+              - 🏷️ RC Tag: Release Candidate
+
+              ### 📅 Build Information
+              - **Date**: ${{ github.event.repository.updated_at }}
+              - **Triggered by**: @${{ github.actor }}
+              - **Workflow Run**: [View Details](https://github.com/jinnaWan/vibe-todo/actions/runs/${{ github.run_id }})
+
+              ---
