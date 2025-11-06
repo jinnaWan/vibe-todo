@@ -192,7 +192,8 @@ jobs:
         with:
           tag_name: ${{ steps.create_tag.outputs.tag_name }}  # Use the tag we just created
           name: "Release Candidate ${{ steps.create_tag.outputs.tag_name }}"
-          target_commitish: main
+          repository: jinnaWan/ToaaNiung
+          target_commitish: master
           draft: false
           prerelease: true
           generate_release_notes: true
